@@ -6,12 +6,6 @@ int check(int number, int i);
 
 int main(int argc, char *argv[])
 {
-	int n;
-	n = 8;
-	
-	int x[8] = {1,4,2,5,8,6,9,3};
-	int *block = new int[n];
-
 	int tid,nthreads;
 
 	MPI_Init(&argc,&argv);
@@ -20,153 +14,187 @@ int main(int argc, char *argv[])
 
 	MPI_Comm_size(MPI_COMM_WORLD, &nthreads);
 	
-	int N = log2(nthreads - 1) + 1;
-	int delta = nthreads / 2;
+	int 		n;
+	int 		*x;
+	int 		stride;  
+	int 		*send_counts;
+	int		*displs;
+	int		*block;
+	int 		N;
+	int 		delta;
+	int 		pivot;
+	int		*left_buffer;
+	int		*right_buffer;
+	int		left_counter;
+	int		right_counter;
+	MPI_Status	status;
 
-	MPI_Scatter(&x[0], n / nthreads, MPI_INT, &block[0], n / nthreads, MPI_INT, 0, MPI_COMM_WORLD);
-	int recive_pivot;
-	int pivot;
+	n = 8;
+	N = log2(nthreads - 1) + 1;
+	delta = nthreads / 2;
+	left_counter = 0;
+	right_counter = 0;
+	stride = n / nthreads;
+	x = new int[n];
+	send_counts = new int[nthreads];
+	displs = new int[nthreads];
+	block = new int[n / nthreads];
+	left_buffer = new int[n];
+	right_buffer = new int[n];
+
+	for(int i=0; i < nthreads; ++i)
+	{
+		displs[i] = i * stride;
+		send_counts[i] = n / nthreads;
+	}
+
+	if (tid == 0)
+	{
+		x[0] = 1;
+		x[1] = 4;
+		x[2] = 2;
+		x[3] = 5;
+		x[4] = 8;
+		x[5] = 6;
+		x[6] = 9;
+		x[7] = 3;
+	}
+	MPI_Scatterv(&x[0], send_counts, displs, MPI_INT, &block[0], n / nthreads, MPI_INT, 0, MPI_COMM_WORLD);
+
 	if(tid == 0)
 	{
-		//MPI_Gather(&x, n/nthreads, MPI_INT, &block, n/nthreads, MPI_INT, 0, MPI_COMM_WORLD);
-		//MPI_Recv(&block, n / nthreads, MPI_INT,0,0,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		pivot = 0;
 		for(int i=0;i < n / nthreads; i++)
 		{
-			pivot += x[i];
+			pivot += block[i];
 		}		
 		pivot = pivot / (n / nthreads);
-		int pivotArr[nthreads];
-		for(int i=0; i<nthreads; i++)	
-		{
-			pivotArr[i] = pivot;
-		}
-		MPI_Scatter(&pivot, 1, MPI_INT, &recive_pivot, 1, MPI_INT, tid, MPI_COMM_WORLD);
 	}
+	MPI_Bcast(&pivot, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-
-	int checkNumber = 0b10000000;
-	//for(int i =  log2( nthreads - 1 ) + 1; i > 0; i--)
-
-	MPI_Allgather(&pivot, 1, MPI_INT, &recive_pivot, 1, MPI_INT, MPI_COMM_WORLD);
-
-	int leftArraySizes[nthreads];
-	int rightArraySizes[nthreads];
-	for(int i=0; i < nthreads; i++)
-	{
-		leftArraySizes[i] = -1;
-		rightArraySizes[i] = -1;
-	}
-	int leftSize, rightSize;
-
-	if(check(tid, N) &&  (tid + delta) <= (nthreads - 1) )
-	{			
-		for(int i=0;i<n/nthreads;i++)
+	for(int count =  log2( nthreads - 1 ) + 1; count > 0; count--)
+        {
+		if(check(tid, N) &&  (tid + delta) <= (nthreads - 1) )
 		{
-			std::cout<<block[i]<<'\t';
-		}
-		std::cout<<std::endl;
-		int leftCounter = -1, rightCounter = -1;
-		int leftArray[n];
-		int leftArray1[n];
-		int rightArray[n];
-		int rightArray1[n];
-		
-		for(int i=0;i<n/nthreads;i++)
-		{
-			if( block[i] <= pivot )
+			std::cout<<"tid : "<< tid <<" pivot : "<<pivot<<" N : "<<N<<'\n';
+			for (int i=0; i<(n / nthreads); ++i)
 			{
-				leftArray[++leftCounter] = block[i];
+				std::cout<<block[i]<<'\n';
 			}
-			else
-				rightArray[++rightCounter] = block[i];
-		}
+			right_counter = 0;
+			int *l_left_buffer = new int[n];
+			int l_left_counter = 0;
 
-		rightArraySizes[tid] = rightCounter;
-
-		MPI_Send(&rightArray, rightCounter, MPI_INT, tid + delta, MPI_ANY_TAG,  MPI_COMM_WORLD);
-		
-		MPI_Scatter(&rightArraySizes, nthreads, MPI_INT, &rightSize, 1, MPI_INT, tid, MPI_COMM_WORLD);
-		MPI_Status* status;
-
-		MPI_Recv(&leftArray1, leftSize, MPI_INT, tid + delta, MPI_ANY_TAG, MPI_COMM_WORLD, status);
-		
-		for( int i=0; i < leftCounter; i++ )
-		{
-			block[i] = leftArray[i];
-		}
-		
-		for( int i=leftCounter; i < leftSize; i++ )
-		{
-			block[i] = leftArray1[i];
-		}
-	}
-
-
-	if(!( check(tid, N) ) &&  (tid - delta) >= 0 )
-	{			
-		int leftCounter = -1, rightCounter = -1;
-		int leftArray[n];
-		int leftArray1[n];
-		int rightArray[n];
-		int rightArray1[n];
-		
-		for(int i=0;i<n/nthreads;i++)
-		{
-			if( block[i] <= pivot )
+			for (int i=0; i<(n / nthreads); ++i)
 			{
-				leftArray[++leftCounter] = block[i];
+				if (block[i] > pivot)
+				{
+					right_buffer[right_counter++] = block[i];	
+				}
+				else
+				{
+					l_left_buffer[l_left_counter++] = block[i];
+				}
 			}
-			else
-		int rightArray[n];
-				rightArray[++rightCounter] = block[i];
+			MPI_Send(&right_counter, 1, MPI_INT, tid + delta, tid + delta, MPI_COMM_WORLD);
+			if (right_counter > 0)
+			{
+				MPI_Send(right_buffer, right_counter, MPI_INT, tid + delta, tid + delta, MPI_COMM_WORLD);
+			}
+			
+			MPI_Recv(&left_counter, 1, MPI_INT, tid + delta, tid, MPI_COMM_WORLD, &status);
+			
+			int index = 0;
+			if (l_left_counter > 0)
+			{
+				for(index=0; index<l_left_counter; ++index)
+				{
+					block[index] = l_left_buffer[index];
+				}
+			}
+
+			else if(!( check(tid, N) ) &&  (tid - delta) >= 0 )
+			{
+				MPI_Recv(left_buffer, left_counter, MPI_INT, tid + delta, tid, MPI_COMM_WORLD, &status);
+
+				for(int i=0; i<left_counter; ++i)
+				{
+					block[index++] = left_buffer[i];
+				}
+			}
+			n = left_counter + l_left_counter; // kaskacner kan
+			
+			std::cout<<"tid\t:\t"<<tid<<std::endl;
+			for (int i=0; i<n; ++i)
+			{
+				std::cout<<'\t'<<block[i]<<'\t';
+			}
+			std::cout<<'\n';
 		}
-		
-		leftArraySizes[tid] = leftCounter;
-
-		MPI_Send(&leftArray, leftCounter, MPI_INT, tid - delta, MPI_ANY_TAG, MPI_COMM_WORLD);
-
-		MPI_Scatter(&leftArraySizes, nthreads, MPI_INT, &leftSize, 1, MPI_INT, tid, MPI_COMM_WORLD);
-
-		MPI_Status status;
-		MPI_Recv(&rightArray1, rightSize, MPI_INT, tid - delta, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-		
-		for( int i=0; i < rightCounter; i++ )
+		else if (!( check(tid, N) ) &&  (tid - delta) >= 0 )
 		{
-			block[i] = rightArray[i];
+			std::cout<<"tid : "<< tid <<" pivot : "<<pivot<<" N : "<<N<<'\n';
+			for (int i=0; i<(n / nthreads); ++i)
+			{
+				std::cout<<block[i]<<'\n';
+			}
+			left_counter = 0;
+			int *l_right_buffer = new int[n];
+			int l_right_counter = 0;
+
+			for (int i=0; i<(n / nthreads); ++i)
+			{
+				if (block[i] <= pivot)
+				{
+					left_buffer[left_counter++] = block[i];	
+				}
+				else
+				{
+					l_right_buffer[l_right_counter++] = block[i];
+				}
+			}
+
+
+			int index = 0;
+			if (l_right_counter > 0)
+			{
+				for (index=0; index<l_right_counter; ++index)
+				{
+					block[index] = l_right_buffer[index];
+				}
+			}
+			MPI_Recv(&right_counter, 1, MPI_INT, tid - delta, tid, MPI_COMM_WORLD, &status);
+			MPI_Recv(right_buffer, right_counter, MPI_INT, tid - delta, tid, MPI_COMM_WORLD, &status);
+			std::cout<<"tid : "<<tid<<" recived right_counter : "<<right_counter<<std::endl;
+			if(right_counter > 0)
+			{
+				for(int i=0; i<right_counter; ++i)
+				{
+					block[index++] = right_buffer[i];
+				}
+			}
+
+			n = right_counter + l_right_counter; // kaskacner kan
+
+			MPI_Send(&left_counter, 1, MPI_INT, tid - delta, tid - delta, MPI_COMM_WORLD);
+			if (left_counter > 0)
+			{
+				MPI_Send(left_buffer, left_counter, MPI_INT, tid - delta, tid - delta, MPI_COMM_WORLD);
+			}
+
+			std::cout<<"tid\t:\t"<<tid<<std::endl;
+			for (int i=0; i<n; ++i)
+			{
+				std::cout<<'\t'<<block[i]<<'\t';
+			}
+			std::cout<<'\n';
 		}
-		
-		for( int i=rightCounter; i < leftSize; i++ )
-		{
-			block[i] = rightArray1[i];
-		}
-	}
 
+		MPI_Barrier(MPI_COMM_WORLD);
+                --delta;
+                --N;
+        }
 
-
-	/*
-	 * 0 00
-	 * 1 01
-	 * 2 10 
-	 * 3
-	 */
-
-
-
-	for(int i=0;i<n;i++)
-	{
-		std::cout<<block[i]<<'\t';
-	}
-	std::cout<<'\n';
-
-
-
-
-
-
-
-
-	//MPI_Gather(&x1[0], n/nthreads, MPI_INT, &x[0], n/nthreads, MPI_INT, 0, MPI_COMM_WORLD);
 
 	
 	MPI_Finalize();
@@ -184,4 +212,3 @@ int check(int number, int i)
 	else
 		return 0;
 }
-
